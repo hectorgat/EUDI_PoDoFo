@@ -110,5 +110,6 @@
 #include "main/PdfXObject.h"
 #include "main/PdfXObjectForm.h"
 #include "main/PdfXObjectPostScript.h"
+#include "main/HelloWorld.h"
 
 #endif // PODOFO_H

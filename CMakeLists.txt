@@ -262,7 +262,7 @@ file(APPEND
 )
 
 function(add_source subdir subdir_path dstsources dstheaders)
-    file(GLOB_RECURSE source_files "${subdir_path}/[^.]*")
+    file(GLOB_RECURSE source_files CONFIGURE_DEPENDS "${subdir_path}/[^.]*")
     # Set visual studio source group
     source_group(${subdir} FILES ${source_files})
     # Add subdir to source files

@@ -1,10 +1,12 @@
-// PdfDssSigningSession.cpp
+// PdfRemoteSignDocumentSession.cpp
 
 #ifdef _MSC_VER
 #  define _CRT_SECURE_NO_WARNINGS
 #endif
 
-#include "PdfDssSigningSession.h"
+#include <podofo/private/OpenSSLInternal.h>
+#include <openssl/bio.h>
+#include "PdfRemoteSignDocumentSession.h"
 #include <iterator>  // for std::istreambuf_iterator
 
 using namespace std;
@@ -24,8 +26,8 @@ void BioFreeAll::operator()(BIO* b) const noexcept {
 }
 
 // Constructor
-PdfDssSigningSession::PdfDssSigningSession(
-    ConformanceLevel conformanceLevel,
+PdfRemoteSignDocumentSession::PdfRemoteSignDocumentSession(
+    const std::string& conformanceLevel,
     const std::string& hashAlgorithmOid,
     const std::string& documentInputPath,
     const std::string& documentOutputPath,
@@ -58,10 +60,10 @@ PdfDssSigningSession::PdfDssSigningSession(
 }
 
 // Destructor
-PdfDssSigningSession::~PdfDssSigningSession() = default;
+PdfRemoteSignDocumentSession::~PdfRemoteSignDocumentSession() = default;
 
 // beginSigning()
-std::string PdfDssSigningSession::beginSigning() {
+std::string PdfRemoteSignDocumentSession::beginSigning() {
     try {
         cout << "\n=== Starting PDF Signing Process ===" << endl;
         fs::copy_file(_documentInputPath, _documentOutputPath, fs::copy_options::overwrite_existing);
@@ -86,16 +88,16 @@ std::string PdfDssSigningSession::beginSigning() {
         //signature.SetSignatureDate(PdfDate::LocalNow());
 
         cout << "Setting up signing parameters..." << endl;
-        if (_conformanceLevel == ConformanceLevel::Ades_B_B) {
+        if (_conformanceLevel == "Ades_B_B") {
             _cmsParams.SignatureType = PdfSignatureType::PAdES_B;
         }
-        else if (_conformanceLevel == ConformanceLevel::Ades_B_T) {
+        else if (_conformanceLevel == "Ades_B_T") {
             throw runtime_error("Conformance level Ades_B_T is not supported yet");
         }
-        else if (_conformanceLevel == ConformanceLevel::Ades_B_LT) {
+        else if (_conformanceLevel == "Ades_B_LT") {
             throw runtime_error("Conformance level Ades_B_LT is not supported yet");
         }
-        else if (_conformanceLevel == ConformanceLevel::Ades_B_LTA) {
+        else if (_conformanceLevel == "Ades_B_LTA") {
             throw runtime_error("Conformance level Ades_B_LTA is not supported yet");
         }
         else {
@@ -147,7 +149,7 @@ std::string PdfDssSigningSession::beginSigning() {
 }
 
 // finishSigning()
-void PdfDssSigningSession::finishSigning(const string& signedHash) {
+void PdfRemoteSignDocumentSession::finishSigning(const string& signedHash) {
     try {
         cout << "\n=== Finishing Signing Process ===" << endl;
         auto buff = ConvertDSSHashToSignedHash(signedHash);
@@ -164,7 +166,7 @@ void PdfDssSigningSession::finishSigning(const string& signedHash) {
 }
 
 // ConvertBase64PEMtoDER()
-std::vector<unsigned char> PdfDssSigningSession::ConvertBase64PEMtoDER(
+std::vector<unsigned char> PdfRemoteSignDocumentSession::ConvertBase64PEMtoDER(
     const optional<string>& base64PEM,
     const optional<string>& outputPath)
 {
@@ -198,7 +200,7 @@ std::vector<unsigned char> PdfDssSigningSession::ConvertBase64PEMtoDER(
 }
 
 // ReadFile()
-void PdfDssSigningSession::ReadFile(const string& filepath, string& str) {
+void PdfRemoteSignDocumentSession::ReadFile(const string& filepath, string& str) {
     ifstream file(filepath, ios::binary);
     if (file) {
         str.assign((istreambuf_iterator<char>(file)), {});
@@ -209,7 +211,7 @@ void PdfDssSigningSession::ReadFile(const string& filepath, string& str) {
 }
 
 // ToBase64()
-string PdfDssSigningSession::ToBase64(const charbuff& data) {
+string PdfRemoteSignDocumentSession::ToBase64(const charbuff& data) {
     BIO* raw_b64 = BIO_new(BIO_f_base64()); BIO_set_flags(raw_b64, BIO_FLAGS_BASE64_NO_NL);
     BIO* raw_mem = BIO_new(BIO_s_mem());
     BIO* raw_chain = BIO_push(raw_b64, raw_mem);
@@ -225,7 +227,7 @@ string PdfDssSigningSession::ToBase64(const charbuff& data) {
 }
 
 // ConvertDSSHashToSignedHash()
-charbuff PdfDssSigningSession::ConvertDSSHashToSignedHash(const string& DSSHash) {
+charbuff PdfRemoteSignDocumentSession::ConvertDSSHashToSignedHash(const string& DSSHash) {
     BIO* raw_b64 = BIO_new(BIO_f_base64()); BIO_set_flags(raw_b64, BIO_FLAGS_BASE64_NO_NL);
     BIO* raw_mem = BIO_new_mem_buf(DSSHash.data(), static_cast<int>(DSSHash.size()));
     BIO* raw_chain = BIO_push(raw_b64, raw_mem);
@@ -242,7 +244,7 @@ charbuff PdfDssSigningSession::ConvertDSSHashToSignedHash(const string& DSSHash)
 }
 
 // HexToBytes()
-vector<unsigned char> PdfDssSigningSession::HexToBytes(const string& hex) {
+vector<unsigned char> PdfRemoteSignDocumentSession::HexToBytes(const string& hex) {
     vector<unsigned char> bytes;
     for (size_t i = 0; i < hex.length(); i += 2) {
         string byteString = hex.substr(i, 2);
@@ -253,7 +255,7 @@ vector<unsigned char> PdfDssSigningSession::HexToBytes(const string& hex) {
 }
 
 // ToHexString()
-string PdfDssSigningSession::ToHexString(const charbuff& data) {
+string PdfRemoteSignDocumentSession::ToHexString(const charbuff& data) {
     stringstream ss;
     ss << hex << setfill('0');
     for (unsigned char c : data) {
@@ -263,7 +265,7 @@ string PdfDssSigningSession::ToHexString(const charbuff& data) {
 }
 
 // UrlEncode()
-string PdfDssSigningSession::UrlEncode(const string& value) {
+string PdfRemoteSignDocumentSession::UrlEncode(const string& value) {
     ostringstream escaped; escaped.fill('0'); escaped << hex;
     for (unsigned char c : value) {
         if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
@@ -277,9 +279,9 @@ string PdfDssSigningSession::UrlEncode(const string& value) {
 }
 
 // printState()
-void PdfDssSigningSession::printState() const {
+void PdfRemoteSignDocumentSession::printState() const {
     cout << "PdfSigningSession state:\n";
-    cout << "  ConformanceLevel: " << conformanceLevelToString(_conformanceLevel) << "\n";
+    cout << "  ConformanceLevel: " << _conformanceLevel << "\n";
     cout << "  HashAlgorithm:    " << hashAlgorithmToString(_hashAlgorithm) << "\n";
     cout << "  DocumentInput:    " << _documentInputPath << "\n";
     cout << "  DocumentOutput:   " << _documentOutputPath << "\n";
@@ -290,28 +292,18 @@ void PdfDssSigningSession::printState() const {
 }
 
 // static helpers
-HashAlgorithm PdfDssSigningSession::hashAlgorithmFromOid(const string& oid) {
+HashAlgorithm PdfRemoteSignDocumentSession::hashAlgorithmFromOid(const string& oid) {
     if (oid == "2.16.840.1.101.3.4.2.1") return HashAlgorithm::SHA256;
     if (oid == "2.16.840.1.101.3.4.2.2") return HashAlgorithm::SHA384;
     if (oid == "2.16.840.1.101.3.4.2.3") return HashAlgorithm::SHA512;
     return HashAlgorithm::Unknown;
 }
 
-const char* PdfDssSigningSession::hashAlgorithmToString(HashAlgorithm alg) {
+const char* PdfRemoteSignDocumentSession::hashAlgorithmToString(HashAlgorithm alg) {
     switch (alg) {
     case HashAlgorithm::SHA256: return "SHA-256";
     case HashAlgorithm::SHA384: return "SHA-384";
     case HashAlgorithm::SHA512: return "SHA-512";
     default:                    return "Unknown";
-    }
-}
-
-const char* PdfDssSigningSession::conformanceLevelToString(ConformanceLevel level) {
-    switch (level) {
-    case ConformanceLevel::Ades_B_B:   return "Ades_B_B";
-    case ConformanceLevel::Ades_B_T:   return "Ades_B_T";
-    case ConformanceLevel::Ades_B_LT:  return "Ades_B_LT";
-    case ConformanceLevel::Ades_B_LTA: return "Ades_B_LTA";
-    default: return "Unknown";
     }
 }

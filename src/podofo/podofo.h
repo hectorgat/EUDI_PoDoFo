@@ -111,6 +111,6 @@
 #include "main/PdfXObjectForm.h"
 #include "main/PdfXObjectPostScript.h"
 #include "main/HelloWorld.h"
-#include "main/PdfDssSigningSession.h"
+#include "main/PdfRemoteSignDocumentSession.h"
 
 #endif // PODOFO_H

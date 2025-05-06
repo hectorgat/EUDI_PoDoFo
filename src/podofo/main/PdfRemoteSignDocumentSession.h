@@ -20,7 +20,6 @@
 #include <filesystem>
 
 #include <podofo/podofo.h>
-#include <podofo/private/OpenSSLInternal.h>
 #include <openssl/bio.h>
 
 

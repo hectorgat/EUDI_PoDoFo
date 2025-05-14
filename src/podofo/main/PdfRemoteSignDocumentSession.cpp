@@ -191,11 +191,11 @@ std::vector<unsigned char> PdfRemoteSignDocumentSession::ConvertBase64PEMtoDER(
     if (len <= 0) throw runtime_error("Base64 decode failed");
     der.resize(len);
 
-    if (outputPath && !outputPath->empty()) {
-        ofstream out(*outputPath, ios::binary);
-        if (!out) throw runtime_error("Failed to open output file for DER writing");
-        out.write(reinterpret_cast<const char*>(der.data()), static_cast<streamsize>(der.size()));
-    }
+    //if (outputPath && !outputPath->empty()) {
+    //    ofstream out(*outputPath, ios::binary);
+    //    if (!out) throw runtime_error("Failed to open output file for DER writing");
+    //    out.write(reinterpret_cast<const char*>(der.data()), static_cast<streamsize>(der.size()));
+    //}
     return der;
 }
 

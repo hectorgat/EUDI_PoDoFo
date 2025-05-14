@@ -83,9 +83,9 @@ std::string PdfRemoteSignDocumentSession::beginSigning() {
         auto& signature = static_cast<PdfSignature&>(field);
         signature.MustGetWidget().SetFlags(PdfAnnotationFlags::Invisible | PdfAnnotationFlags::Hidden);
         signature.SetSignatureReason(PdfString("Document approval"));
-        signature.SetSignerName(PdfString("Goofy User"));
-        signature.SetSignatureDate(PoDoFo::PdfDate::ParseW3C("2025-04-01T00:00:0.000000Z"));
-        //signature.SetSignatureDate(PdfDate::LocalNow());
+        signature.SetSignerName(PdfString("Custom User"));
+        //signature.SetSignatureDate(PoDoFo::PdfDate::ParseW3C("2025-04-01T00:00:0.000000Z"));
+        signature.SetSignatureDate(PdfDate::LocalNow());
 
         cout << "Setting up signing parameters..." << endl;
         if (_conformanceLevel == "Ades_B_B") {

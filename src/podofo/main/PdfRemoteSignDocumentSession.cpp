@@ -33,7 +33,8 @@ PdfRemoteSignDocumentSession::PdfRemoteSignDocumentSession(
     const std::string& documentOutputPath,
     const std::string& endCertificateBase64,
     const std::vector<std::string>& certificateChainBase64,
-    const std::optional<std::string>& rootEntityCertificateBase64
+    const std::optional<std::string>& rootEntityCertificateBase64,
+    const std::optional<std::string>& label
 )
     : _conformanceLevel(conformanceLevel)
     , _hashAlgorithm(hashAlgorithmFromOid(hashAlgorithmOid))
@@ -42,6 +43,7 @@ PdfRemoteSignDocumentSession::PdfRemoteSignDocumentSession(
     , _endCertificateBase64(endCertificateBase64)
     , _certificateChainBase64(certificateChainBase64)
     , _rootCertificateBase64(rootEntityCertificateBase64)
+    , _label(label)
 {
     // Convert the certificates during construction
     _endCertificateDer = ConvertBase64PEMtoDER(endCertificateBase64, "input/endCertificate.der");
@@ -88,17 +90,17 @@ std::string PdfRemoteSignDocumentSession::beginSigning() {
         signature.SetSignatureDate(PdfDate::LocalNow());
 
         cout << "Setting up signing parameters..." << endl;
-        if (_conformanceLevel == "Ades_B_B") {
+        if (_conformanceLevel == "ADES_B_B") {
             _cmsParams.SignatureType = PdfSignatureType::PAdES_B;
         }
-        else if (_conformanceLevel == "Ades_B_T") {
-            throw runtime_error("Conformance level Ades_B_T is not supported yet");
+        else if (_conformanceLevel == "ADES_B_T") {
+            throw runtime_error("Conformance level ADES_B_T is not supported yet");
         }
-        else if (_conformanceLevel == "Ades_B_LT") {
-            throw runtime_error("Conformance level Ades_B_LT is not supported yet");
+        else if (_conformanceLevel == "ADES_B_LT") {
+            throw runtime_error("Conformance level ADES_B_LT is not supported yet");
         }
-        else if (_conformanceLevel == "Ades_B_LTA") {
-            throw runtime_error("Conformance level Ades_B_LTA is not supported yet");
+        else if (_conformanceLevel == "ADES_B_LTA") {
+            throw runtime_error("Conformance level ADES_B_LTA is not supported yet");
         }
         else {
             throw runtime_error("Invalid conformance level");
@@ -289,6 +291,8 @@ void PdfRemoteSignDocumentSession::printState() const {
     cout << "  ChainCount:       " << _certificateChainBase64.size() << "\n";
     if (_rootCertificateBase64)
         cout << "  RootCert (bytes): " << _rootCertificateBase64->size() << "\n";
+    if (_label)
+        cout << "  Label:            " << *_label << "\n";
 }
 
 // static helpers

@@ -10,6 +10,15 @@
 #include <date/date.h>
 
 #include <podofo/private/OpenSSLInternal.h>
+#include <openssl/ts.h>  // Add timestamp headers
+#include <openssl/err.h>
+#include <openssl/asn1.h>
+#include <openssl/asn1t.h>
+#include <openssl/bio.h>
+#include <openssl/buffer.h>
+#include <openssl/x509.h>
+#include <openssl/x509v3.h>
+#include <openssl/pkcs7.h>
 
 using namespace std;
 using namespace PoDoFo;
@@ -109,14 +118,12 @@ void CmsContext::ComputeSignature(const bufferview& signedHash, charbuff& signat
     std::memcpy(buf, signedHash.data(), signedHash.size());
     auto signatuerAsn1 = CMS_SignerInfo_get0_signature(m_signer);
 
-    // Directly set the signature memory in the SignerInfo
     ASN1_STRING_set0(signatuerAsn1, buf, (int)signedHash.size());
 
     m_out = BIO_new(BIO_s_mem());
     if (m_out == nullptr)
         PODOFO_RAISE_ERROR_INFO(PdfErrorCode::OutOfMemory, "BIO_new");
 
-    // Output CMS as DER format
     i2d_CMS_bio(m_out, m_cms);
 
     char* signatureData;
@@ -124,6 +131,7 @@ void CmsContext::ComputeSignature(const bufferview& signedHash, charbuff& signat
     signature.assign(signatureData, signatureData + length);
     m_status = CmsContextStatus::ComputedSignature;
 }
+
 
 void CmsContext::AddAttribute(const string_view& nid, const bufferview& attr, bool signedAttr, bool asOctetString)
 {
@@ -138,6 +146,7 @@ void CmsContext::AddAttribute(const string_view& nid, const bufferview& attr, bo
         addAttribute(m_signer, CMS_unsigned_add1_attr_by_txt, nid, attr, asOctetString);
     }
 }
+
 
 void CmsContext::loadX509Certificate(const bufferview& cert)
 {
@@ -287,13 +296,53 @@ void addAttribute(CMS_SignerInfo* si, int(*addAttributeFun)(CMS_SignerInfo*, con
     int type;
     const void* bytes;
     int len;
-    ASN1_TYPE* asn1type;
+    ASN1_TYPE* asn1type = nullptr;
+
+    if (nid == "1.2.840.113549.1.9.16.2.14") // id-aa-timeStampToken
+    {
+        // For timestamp token, we need to parse it as DER first
+        const unsigned char* p = reinterpret_cast<const unsigned char*>(attr.data());
+        TS_RESP* response = d2i_TS_RESP(nullptr, &p, static_cast<long>(attr.size()));
+        if (!response) {
+            PODOFO_RAISE_ERROR_INFO(PdfErrorCode::OpenSSLError,
+                "Failed to parse timestamp response");
+        }
+
+        // Get the TimeStampToken from TS_RESP
+        PKCS7* token = TS_RESP_get_token(response);
+        if (!token) {
+            TS_RESP_free(response);
+            PODOFO_RAISE_ERROR_INFO(PdfErrorCode::OpenSSLError,
+                "Failed to get timestamp token from response");
+        }
+
+        // Convert TimeStampToken to DER
+        unsigned char* der = nullptr;
+        int der_len = i2d_PKCS7(token, &der);
+        if (der_len < 0) {
+            TS_RESP_free(response);
+            PODOFO_RAISE_ERROR_INFO(PdfErrorCode::OpenSSLError,
+                "Failed to convert timestamp token to DER");
+        }
+
+        // Add the DER-encoded token as an unsigned attribute
+        int rc = addAttributeFun(si, nid.data(), V_ASN1_SEQUENCE, der, der_len);
+
+        OPENSSL_free(der);
+        TS_RESP_free(response);
+
+        if (rc < 0) {
+            PODOFO_RAISE_ERROR_INFO(PdfErrorCode::OpenSSLError,
+                "Failed to add timestamp token as unsigned attribute");
+        }
+        return;
+    }
+
     if (octet)
     {
         type = V_ASN1_OCTET_STRING;
         bytes = attr.data();
         len = (int)attr.size();
-        asn1type = nullptr;
     }
     else
     {

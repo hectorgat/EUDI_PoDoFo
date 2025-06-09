@@ -8,10 +8,15 @@
 #include <openssl/bio.h>
 #include "PdfRemoteSignDocumentSession.h"
 #include <iterator>  // for std::istreambuf_iterator
+#include <openssl/ts.h>
 
 using namespace std;
 using namespace PoDoFo;
 namespace fs = std::filesystem;
+
+string GetInputFilePath(const string& filename) {
+    return "input/" + filename;
+}
 
 // free‐function moved here
 static std::vector<unsigned char> ReadBinary(const std::string& path) {
@@ -44,6 +49,7 @@ PdfRemoteSignDocumentSession::PdfRemoteSignDocumentSession(
     , _certificateChainBase64(certificateChainBase64)
     , _rootCertificateBase64(rootEntityCertificateBase64)
     , _label(label)
+
 {
     // Convert the certificates during construction
     _endCertificateDer = ConvertBase64PEMtoDER(endCertificateBase64, "input/endCertificate.der");
@@ -85,22 +91,24 @@ std::string PdfRemoteSignDocumentSession::beginSigning() {
         auto& signature = static_cast<PdfSignature&>(field);
         signature.MustGetWidget().SetFlags(PdfAnnotationFlags::Invisible | PdfAnnotationFlags::Hidden);
         signature.SetSignatureReason(PdfString("Document approval"));
-        signature.SetSignerName(PdfString("Custom User"));
-        //signature.SetSignatureDate(PoDoFo::PdfDate::ParseW3C("2025-04-01T00:00:0.000000Z"));
-        signature.SetSignatureDate(PdfDate::LocalNow());
+        signature.SetSignerName(PdfString("Goofy User"));  //TODO TO RENAME IT TO Custom User
+        signature.SetSignatureDate(PoDoFo::PdfDate::ParseW3C("2025-04-01T00:00:0.000000Z"));  //TODO FREEZE TIMESTAMP FOR TESTING (COMMENT IN DEV)
+        //signature.SetSignatureDate(PdfDate::LocalNow());  //TODO UNCOMMENT IN PRODUCTION
 
         cout << "Setting up signing parameters..." << endl;
         if (_conformanceLevel == "ADES_B_B") {
             _cmsParams.SignatureType = PdfSignatureType::PAdES_B;
         }
         else if (_conformanceLevel == "ADES_B_T") {
-            throw runtime_error("Conformance level ADES_B_T is not supported yet");
+            _cmsParams.SignatureType = PdfSignatureType::PAdES_B_T;
         }
         else if (_conformanceLevel == "ADES_B_LT") {
             throw runtime_error("Conformance level ADES_B_LT is not supported yet");
+            _cmsParams.SignatureType = PdfSignatureType::PAdES_B_LT;
         }
         else if (_conformanceLevel == "ADES_B_LTA") {
             throw runtime_error("Conformance level ADES_B_LTA is not supported yet");
+            _cmsParams.SignatureType = PdfSignatureType::PAdES_B_LTA;
         }
         else {
             throw runtime_error("Invalid conformance level");
@@ -119,8 +127,9 @@ std::string PdfRemoteSignDocumentSession::beginSigning() {
             throw runtime_error("Hash algorithm is not supported");
         }
 
-        auto signer = make_shared<PdfSignerCms>(cert, _cmsParams);
-        _signerId = _ctx.AddSigner(signature, signer);
+        _signer = make_shared<PdfSignerCms>(cert, _cmsParams);
+        _signer->ReserveAttributeSize(17000);
+        _signerId = _ctx.AddSigner(signature, _signer);  // I want to pass the signer as reference object
 
         cout << "Starting signing process..." << endl;
         _ctx.StartSigning(_doc, _stream, _results, PdfSaveOptions::NoMetadataUpdate);
@@ -149,13 +158,31 @@ std::string PdfRemoteSignDocumentSession::beginSigning() {
         throw;
     }
 }
-
+//TODO base64Tsr MUST BE OPTIONAL
 // finishSigning()
-void PdfRemoteSignDocumentSession::finishSigning(const string& signedHash) {
+void PdfRemoteSignDocumentSession::finishSigning(const string& signedHash, const string& base64Tsr) {
     try {
         cout << "\n=== Finishing Signing Process ===" << endl;
-        auto buff = ConvertDSSHashToSignedHash(signedHash);
+        cout << "signedHash" << signedHash  <<endl;
+        PoDoFo::charbuff buff = ConvertDSSHashToSignedHash(signedHash);
         _results.Intermediate[_signerId] = buff;
+
+        if (!_signer) {
+            throw runtime_error("Signer not initialized");
+        }
+
+
+        std::string tsr = DecodeBase64Tsr(base64Tsr);
+
+        cout << "Setting timestamp token" << endl;
+        _signer->SetTimestampToken({ tsr.data(), tsr.size() });
+
+        //--------------------------- End
+
+
+
+
+
         _ctx.FinishSigning(_results);
         cout << "=== Signing Process Completed Successfully ===\n" << endl;
     }
@@ -163,6 +190,81 @@ void PdfRemoteSignDocumentSession::finishSigning(const string& signedHash) {
         cout << "\n=== Error in Finish Signing ===" << endl;
         cout << "Error: " << e.what() << endl;
         _stream.reset();
+        throw;
+    }
+}
+void ReadFile(const string& filepath, string& str) {
+    ifstream file(filepath, ios::binary);
+    if (file) {
+        str.assign((istreambuf_iterator<char>(file)), istreambuf_iterator<char>());
+        file.close();
+    }
+    else {
+        throw runtime_error("Cannot open file: " + filepath);
+    }
+}
+
+
+
+void PdfRemoteSignDocumentSession::setTimestampToken(const string& responseTsrBase64) {
+    try {
+        cout << "\n=== Setting Timestamp Token ===" << endl;
+
+        // Decode base64 to DER using existing helper
+        //_responseTsr = ConvertBase64PEMtoDER(responseTsrBase64, "input/responseTsr.der");
+
+        std::string tsrPath = GetInputFilePath("response.tsr");
+        std::string tsrData;
+        ReadFile(tsrPath, tsrData);
+
+
+        std::cout << "[INFO] Timestamp response (.tsr) read successfully" << std::endl;
+        std::cout << "       File size: " << tsrData.size() << " bytes" << std::endl;
+
+        if (tsrData.size() < 32) {
+            std::cerr << "[WARN] TSR seems too small. Possibly corrupt?" << std::endl;
+        }
+
+        // Optional: Dump first few bytes
+        std::cout << "[DEBUG] First 16 bytes of .tsr (hex): ";
+        for (size_t i = 0; i < std::min<size_t>(16, tsrData.size()); ++i) {
+            printf("%02X ", static_cast<unsigned char>(tsrData[i]));
+        }
+        std::cout << std::endl;
+
+        // Validate .tsr is a valid TS_RESP
+        const unsigned char* p = reinterpret_cast<const unsigned char*>(tsrData.data());
+        TS_RESP* response = d2i_TS_RESP(nullptr, &p, static_cast<long>(tsrData.size()));
+        if (!response) {
+            std::cerr << "[ERROR] Failed to parse .tsr into TS_RESP (OpenSSL error)" << std::endl;
+            // Optional: dump OpenSSL error
+            ERR_print_errors_fp(stderr);
+        }
+        else {
+            std::cout << "[OK] .tsr successfully parsed as TS_RESP" << std::endl;
+            TS_RESP_free(response);
+        }
+
+
+        if (_signer) {
+            cout << "Setting timestamp token" << endl;
+            //_signer->SetTimestampToken({ reinterpret_cast<const char*>(_responseTsr.data()), _responseTsr.size() });
+            _signer->SetTimestampToken({ tsrData.data(), tsrData.size() });
+           // _signer->SetTimestampToken({ _responseTsr.data(), _responseTsr.size() });
+        } else {
+            throw runtime_error("Signer not initialized");
+        }
+
+      /*  if (_responseTsr.empty()) {
+            throw runtime_error("Failed to decode timestamp token from base64");
+        }
+
+        cout << "Timestamp token decoded successfully (" << _responseTsr.size() << " bytes)" << endl;
+        cout << "=== Timestamp Token Set Successfully ===\n" << endl;*/
+    }
+    catch (const exception& e) {
+        cout << "\n=== Error Setting Timestamp Token ===" << endl;
+        cout << "Error: " << e.what() << endl;
         throw;
     }
 }
@@ -193,6 +295,7 @@ std::vector<unsigned char> PdfRemoteSignDocumentSession::ConvertBase64PEMtoDER(
     if (len <= 0) throw runtime_error("Base64 decode failed");
     der.resize(len);
 
+    //TODO COMMENT THIS CODE IN PRODUCTION
     //if (outputPath && !outputPath->empty()) {
     //    ofstream out(*outputPath, ios::binary);
     //    if (!out) throw runtime_error("Failed to open output file for DER writing");
@@ -293,7 +396,59 @@ void PdfRemoteSignDocumentSession::printState() const {
         cout << "  RootCert (bytes): " << _rootCertificateBase64->size() << "\n";
     if (_label)
         cout << "  Label:            " << *_label << "\n";
+    if (!_responseTsr.empty())
+        cout << "  TimestampToken:   " << _responseTsr.size() << " bytes\n";
 }
+
+
+std::string PdfRemoteSignDocumentSession::DecodeBase64Tsr(const std::string& base64Tsr) {
+    // Create a BIO chain for base64 decoding
+    BIO* b64 = BIO_new(BIO_f_base64());
+    if (!b64) {
+        throw std::runtime_error("Failed to create BIO for base64 decoding");
+    }
+    BIO_set_flags(b64, BIO_FLAGS_BASE64_NO_NL);
+
+    // Create a memory BIO to hold the input
+    BIO* mem = BIO_new_mem_buf(base64Tsr.data(), static_cast<int>(base64Tsr.size()));
+    if (!mem) {
+        BIO_free_all(b64);
+        throw std::runtime_error("Failed to create memory BIO");
+    }
+
+    // Chain the BIOs together
+    BIO* bio = BIO_push(b64, mem);
+
+    // Calculate the maximum possible decoded size
+    size_t maxDecodedSize = (base64Tsr.size() * 3) / 4;
+    std::vector<unsigned char> decoded(maxDecodedSize);
+
+    // Read the decoded data
+    int decodedSize = BIO_read(bio, decoded.data(), static_cast<int>(maxDecodedSize));
+    BIO_free_all(bio);
+
+    if (decodedSize <= 0) {
+        throw std::runtime_error("Failed to decode base64 TSR data");
+    }
+
+    // Resize the vector to the actual decoded size
+    decoded.resize(decodedSize);
+
+    // Convert to string
+    std::string tsrData(decoded.begin(), decoded.end());
+
+    // Validate that it's a valid TS_RESP without modifying it
+    const unsigned char* p = reinterpret_cast<const unsigned char*>(tsrData.data());
+    TS_RESP* response = d2i_TS_RESP(nullptr, &p, static_cast<long>(tsrData.size()));
+    if (!response) {
+        std::cerr << "[ERROR] Failed to parse decoded TSR into TS_RESP (OpenSSL error)" << std::endl;
+        throw std::runtime_error("Invalid TSR data after decoding");
+    }
+    TS_RESP_free(response);
+
+    return tsrData;
+}
+
 
 // static helpers
 HashAlgorithm PdfRemoteSignDocumentSession::hashAlgorithmFromOid(const string& oid) {
@@ -311,3 +466,4 @@ const char* PdfRemoteSignDocumentSession::hashAlgorithmToString(HashAlgorithm al
     default:                    return "Unknown";
     }
 }
+

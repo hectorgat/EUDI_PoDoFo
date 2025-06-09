@@ -19,6 +19,8 @@ extern "C"
     struct CMS_ContentInfo_st;
     struct CMS_SignerInfo_st;
     struct bio_st;
+    struct TS_resp_st;  // Forward declaration for TS_RESP
+    struct PKCS7_st;    // Forward declaration for PKCS7
 }
 
 namespace PoDoFo
@@ -76,6 +78,8 @@ namespace PoDoFo
         struct CMS_SignerInfo_st* m_signer;
         struct bio_st* m_databio;
         struct bio_st* m_out;
+        charbuff m_timestampToken;
+        bool m_hasTimestampToken = false;
     };
 }
 

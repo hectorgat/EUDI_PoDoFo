@@ -70,6 +70,7 @@ void PdfSignerCms::ComputeSignature(charbuff& contents, bool dryrun)
         m_parameters.SignedHashHandler(m_encryptedHash, dryrun);
 
     m_cmsContext->ComputeSignature(m_encryptedHash, contents);
+
     if (m_reservedSize != 0 && dryrun)
         contents.resize(contents.size() + m_reservedSize);
 }
@@ -98,6 +99,9 @@ void PdfSignerCms::ComputeSignatureDeferred(const bufferview& processedResult, c
     }
     else
     {
+        if (!m_timestampToken.empty() && m_parameters.SignatureType == PdfSignatureType::PAdES_B_T) {
+            m_cmsContext->AddAttribute("1.2.840.113549.1.9.16.2.14", m_timestampToken, false, true);  // Custom OID
+        }
         m_cmsContext->ComputeSignature(processedResult, contents);
     }
 }
@@ -126,6 +130,8 @@ string PdfSignerCms::GetSignatureSubFilter() const
     switch (m_parameters.SignatureType)
     {
         case PdfSignatureType::PAdES_B:
+            return "ETSI.CAdES.detached";
+        case PdfSignatureType::PAdES_B_T:
             return "ETSI.CAdES.detached";
         case PdfSignatureType::Pkcs7:
             return "adbe.pkcs7.detached";
@@ -219,10 +225,15 @@ void PdfSignerCms::resetContext()
     CmsContextParams params;
     params.Encryption = m_parameters.Encryption;
     params.Hashing = m_parameters.Hashing;
-    params.SigningTimeUTC = m_parameters.SigningTimeUTC;
     switch (m_parameters.SignatureType)
     {
         case PdfSignatureType::PAdES_B:
+            params.AddSigningCertificateV2 = true;
+            params.SkipWriteMIMECapabilities = true;
+            params.SkipWriteSigningTime = true;
+            params.SigningTimeUTC = m_parameters.SigningTimeUTC;
+            break;
+        case PdfSignatureType::PAdES_B_T:
             params.AddSigningCertificateV2 = true;
             params.SkipWriteMIMECapabilities = true;
             params.SkipWriteSigningTime = true;
@@ -231,7 +242,9 @@ void PdfSignerCms::resetContext()
             params.AddSigningCertificateV2 = false;
             params.SkipWriteMIMECapabilities = false;
             params.SkipWriteSigningTime = false;
+            params.SigningTimeUTC = m_parameters.SigningTimeUTC;
             break;
+
         default:
             PODOFO_RAISE_ERROR_INFO(PdfErrorCode::InvalidDataType, "Unsupported signature type");
     }
@@ -248,4 +261,9 @@ void PdfSignerCms::doSign(const bufferview& input, charbuff& output)
 {
     PODOFO_ASSERT(m_privKey != nullptr);
     return ssl::DoSign(input, m_privKey, PdfHashingAlgorithm::Unknown, output);
+}
+
+void PdfSignerCms::SetTimestampToken(const bufferview& tsr)
+{
+    m_timestampToken = tsr;
 }
